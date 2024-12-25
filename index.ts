@@ -147,9 +147,11 @@ async function scan() {
   const targetSymbols = ['SOL/USDT'];
 
   const filteredSymbols = Object.entries(symbols)
-    .filter(([symbol]) =>
+    .filter(([symbol, value]) =>
       targetSymbols.some((s) => symbol.includes(s)) &&
-      baseCurrencies.some((base) => symbol.includes(base))
+      baseCurrencies.some((base) => symbol.includes(base)) &&
+      value.length > 1 &&
+      /^[^-]+$/.test(symbol)
     )
     .reduce((acc, [key, value]) => {
       acc[key] = value;
