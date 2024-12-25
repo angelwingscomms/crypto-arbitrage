@@ -1,0 +1,17 @@
+sort
+    the sorting by the "diff" key doesn't seem to work right when run
+fees
+    i want it to account for fees/cost in calculating arbitrage opportunities
+    i want it to account for the buy fee/cost on the first exchange
+    the withdrawal to the other exchange fee/cost
+    the sell fee/cost on the other exchange
+ratio
+    i think buy:1 sell:4 is more profitable than buy:1000 sell:1080. besides the "diff" field, i want a field that shows how relatively large this kind of profit opportunity i just mentioned is, factoring in fees,
+    please explain your soltion in great detail
+amount
+    i want it to calculate what the profit would be if a certain user inputed amount of the best opportunity were to be executed
+    for example, a 135$ to $180 opportunity, what the profit would be if $36 was used
+execute
+    i want it to then get the highest opportunity, and execute, buy, transfer, sell
+    in a loop, while the calculated profit with given amount i talked about earlier (factoring in fees) is greater
+    than 1$

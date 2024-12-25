@@ -1,8 +1,14 @@
-import ccxt from 'ccxt';
+import ccxt from 'npm:ccxt';
 import { promises as fs } from 'node:fs';
 
-// Types
-type PriceRes = [string, number, boolean];
+type PriceRes = {
+  exchangeName: string;
+  price: number;
+  isDex: boolean;
+  buyFee: number;
+  sellFee: number;
+  withdrawFee: number;
+};
 
 type SymbolDetails = {
   [symbol: string]: string[];
@@ -10,44 +16,72 @@ type SymbolDetails = {
 
 type PriceDetails = {
   diff: number;
+  ratio: number;
+  profit: number;
   min: PriceRes;
   max: PriceRes;
 };
 
+// Fetch exchange details for fees
 async function isDex(exchange: any): Promise<boolean> {
   return Boolean(exchange.options?.isDex);
 }
 
-async function fetchPrice(exchange: any, symbol: string): Promise<PriceRes | null> {
-  console.log('checking', symbol, 'on', exchange.id);
+async function fetchPriceWithFees(exchange: any, symbol: string): Promise<PriceRes | null> {
+  console.log('Checking', symbol, 'on', exchange.id);
   try {
     const ticker = await exchange.fetchTicker(symbol);
-    return [exchange.name, ticker.last, await isDex(exchange)];
+    const buyFee = exchange.fees?.trading?.taker || 0.002; // Fallback to 0.2%
+    const sellFee = exchange.fees?.trading?.maker || 0.002;
+    const withdrawFee = exchange.fees?.funding?.withdraw[symbol.split('/')[0]] || 0; // Base asset withdrawal fee
+
+    return {
+      exchangeName: exchange.name,
+      price: ticker.last,
+      isDex: await isDex(exchange),
+      buyFee,
+      sellFee,
+      withdrawFee,
+    };
   } catch (e) {
     console.error(e.constructor.name, e.message);
     return null;
   }
 }
 
+// Compare prices for arbitrage
 async function compareSymbol(exchanges: any[], symbol: string): Promise<[PriceRes, PriceRes] | null> {
-  console.log('comparing', symbol);
-  const results = (await Promise.all(exchanges.map((exchange) => fetchPrice(exchange, symbol)))).filter(
-    (result): result is PriceRes => result !== null && result[1] !== null
+  console.log('Comparing', symbol);
+  const results = (await Promise.all(exchanges.map((exchange) => fetchPriceWithFees(exchange, symbol)))).filter(
+    (result): result is PriceRes => result !== null && result.price !== null
   );
 
   if (results.length === 0) {
-    console.log('no valid results in compareSymbol for', symbol);
+    console.log('No valid results for', symbol);
     return null;
   }
 
   return [
-    results.reduce((min, res) => (res[1] < min[1] ? res : min)),
-    results.reduce((max, res) => (res[1] > max[1] ? res : max)),
+    results.reduce((min, res) => (res.price < min.price ? res : min)),
+    results.reduce((max, res) => (res.price > max.price ? res : max)),
   ];
 }
 
+// Calculate profit with fees
+function calculateProfitWithFees(min: PriceRes, max: PriceRes, amount: number) {
+  const { price: minPrice, buyFee: minBuyFee, withdrawFee: minWithdrawFee } = min;
+  const { price: maxPrice, sellFee: maxSellFee } = max;
+
+  const cost = minPrice * (1 + minBuyFee) * amount;
+  const transferCost = minWithdrawFee;
+  const revenue = maxPrice * (1 - maxSellFee) * amount;
+
+  return revenue - cost - transferCost;
+}
+
+// Collect symbols from exchanges
 async function collectSymbols() {
-  console.log('started collecting symbols');
+  console.log('Started collecting symbols');
 
   const exchanges: any[] = [];
   const symbols: SymbolDetails = {};
@@ -63,14 +97,10 @@ async function collectSymbols() {
   }
 
   for (const exchange of exchanges) {
-    try {
-      if (!Array.isArray(exchange.symbols)) continue;
-      for (const sym of exchange.symbols) {
-        if (!symbols[sym]) symbols[sym] = [];
-        symbols[sym].push(exchange.id);
-      }
-    } catch (e) {
-      console.error(`Error processing exchange ${exchange.id}: ${e}`);
+    if (!Array.isArray(exchange.symbols)) continue;
+    for (const sym of exchange.symbols) {
+      if (!symbols[sym]) symbols[sym] = [];
+      symbols[sym].push(exchange.id);
     }
   }
 
@@ -78,19 +108,43 @@ async function collectSymbols() {
   console.log(symbols);
 }
 
+// Read symbols from file
 async function getSymbols(): Promise<SymbolDetails> {
   const data = await fs.readFile('symbols.json', 'utf-8');
   return JSON.parse(data);
 }
 
+// Execute trades for arbitrage
+async function executeTrade(opportunity: PriceDetails, amount: number) {
+  const { min, max } = opportunity;
+  const { exchangeName: minExchange, price: minPrice } = min;
+  const { exchangeName: maxExchange, price: maxPrice } = max;
+
+  console.log('Executing trade between', minExchange, 'and', maxExchange);
+
+  try {
+    const buyOrder = await min.createOrder('limit', 'buy', amount, minPrice);
+    console.log('Bought:', buyOrder);
+
+    const withdrawal = await min.withdraw('USDT', amount);
+    console.log('Transferred:', withdrawal);
+
+    const sellOrder = await max.createOrder('limit', 'sell', amount, maxPrice);
+    console.log('Sold:', sellOrder);
+  } catch (error) {
+    console.error('Error during trade execution:', error);
+  }
+}
+
+// Scan and identify arbitrage opportunities
 async function scan() {
-  console.log('started');
+  console.log('Started scanning');
 
   const exchanges: { [id: string]: any } = {};
   let prices: { [symbol: string]: PriceDetails } = {};
   const symbols = await getSymbols();
   const baseCurrencies = ['USDC', 'USDT'];
-  const targetSymbols = ['XRP3S'];
+  const targetSymbols = ['SOL/USDT'];
 
   const filteredSymbols = Object.entries(symbols)
     .filter(([symbol]) =>
@@ -107,39 +161,45 @@ async function scan() {
       if (!exchanges[exchangeId]) {
         try {
           const exchange = new ccxt[exchangeId]();
-          console.log('loading', exchangeId);
           await exchange.loadMarkets();
           exchanges[exchangeId] = exchange;
-          console.log('loaded', exchangeId);
         } catch (e) {
-          console.error('exception with', exchangeId, ':', e);
+          console.error('Error loading exchange', exchangeId, ':', e);
         }
       }
     }
   }
 
-  console.log('ex len', Object.keys(exchanges).length);
-
   for (const [symbol, exchangeIds] of Object.entries(filteredSymbols)) {
-    console.log('starting', symbol);
+    console.log('Analyzing', symbol);
     const symbolExchanges = exchangeIds.map((id) => exchanges[id]).filter(Boolean);
     const minmax = await compareSymbol(symbolExchanges, symbol);
     if (!minmax) continue;
 
-    prices[symbol] = {
-      diff: minmax[1][1] - minmax[0][1],
-      min: minmax[0],
-      max: minmax[1],
-    };
+    const diff = calculateProfitWithFees(minmax[0], minmax[1], 1);
+    const ratio = ((minmax[1].price / minmax[0].price) - 1) * 100;
+
+    prices[symbol] = { diff, ratio, profit: diff, min: minmax[0], max: minmax[1] };
   }
 
   prices = Object.fromEntries(
-    Object.entries(prices).sort(([, a], [, b]) => a.diff - b.diff)
+    Object.entries(prices).sort(([, a], [, b]) => b.profit - a.profit)
   );
 
-  console.log(prices);
+  console.log('Arbitrage Opportunities:', prices);
   await fs.writeFile('prices.json', JSON.stringify(prices, null, 2));
+
+  // const minProfit = 1;
+  // const userAmount = 36; // Example input amount
+
+  // for (const symbol in prices) {
+  //   const opportunity = prices[symbol];
+  //   const profit = calculateProfitWithFees(opportunity.min, opportunity.max, userAmount);
+
+  //   if (profit > minProfit) {
+  //     await executeTrade(opportunity, userAmount);
+  //   }
+  // }
 }
 
-// Execute the scan function
 scan().catch(console.error);

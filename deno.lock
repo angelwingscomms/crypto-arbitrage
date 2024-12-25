@@ -1,6 +1,7 @@
 {
   "version": "4",
   "specifiers": {
+    "npm:ccxt@*": "4.4.43",
     "npm:ccxt@^4.4.43": "4.4.43"
   },
   "npm": {
