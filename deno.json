@@ -1,0 +1,19 @@
+{
+  "imports": {
+    "ccxt": "npm:ccxt@^4.4.43"
+  },
+  "compilerOptions": {
+    "strict": true
+  },
+  "permissions": {
+    "allow-hrtime": true,
+    "allow-env": true,
+    "allow-net": true,
+    "allow-read": true,
+    "allow-write": true,
+    "allow-run": true,
+    "allow-plugin": true,
+    "allow-fetch": true,
+    "allow-ffi": true
+  }
+}

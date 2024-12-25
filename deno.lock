@@ -1,0 +1,22 @@
+{
+  "version": "4",
+  "specifiers": {
+    "npm:ccxt@^4.4.43": "4.4.43"
+  },
+  "npm": {
+    "ccxt@4.4.43": {
+      "integrity": "sha512-M6TbwsgsOkkJ/ZpN3z6FKfHBnbX0LyD3XcV2ZzRqGZ8kG4MoBxe1oLKG+u2YAMxUhKVuq07kcll9TOL8Ag9LAg==",
+      "dependencies": [
+        "ws"
+      ]
+    },
+    "ws@8.18.0": {
+      "integrity": "sha512-8VbfWfHLbbwu3+N6OKsOMpBdT4kXPDDB9cJk2bJ6mh9ucxdlnNvH1e+roYkKmN9Nxw2yjz7VzeO9oOz2zJ04Pw=="
+    }
+  },
+  "workspace": {
+    "dependencies": [
+      "npm:ccxt@^4.4.43"
+    ]
+  }
+}
